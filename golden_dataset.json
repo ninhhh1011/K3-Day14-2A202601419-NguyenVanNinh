@@ -206,16 +206,16 @@
     {
       "id": "H02",
       "difficulty": "hard",
-      "question": "If a student requests a late course add on August 5, 2026, which policy version applies, what is the deadline, and how much is the late-add fee?",
-      "expected_answer": "Registration Policy version 2.0 applies because the event occurred on or after August 1, 2026. Under version 2.0, late adds are allowed only through census and charge USD 40 per course.",
+      "question": "If a student requests a late course add on September 1, 2026, which policy version applies, what is the deadline, and how much is the late-add fee?",
+      "expected_answer": "For a late course add requested on September 1, 2026, which falls within the late-add window after standard add/drop ends, Course Registration Policy v2.0 applies. The deadline to complete the late add is the census date on September 4, 2026, and the late-add fee is USD 40 per course.",
       "contexts": [
-        {
-          "source_doc": "09_privacy_security_and_policy_updates.md",
-          "text": "Version 2.0, effective August 1, 2026, allows late adds only through census and charges USD 40 per course. A late-add request made on or after August 1, 2026 follows version 2.0 even if the student first discussed the request in July."
-        },
         {
           "source_doc": "02_course_registration.md",
           "text": "Version 2.0 introduces a late-add window from the end of standard add/drop through the census date."
+        },
+        {
+          "source_doc": "01_academic_calendar.md",
+          "text": "For Fall 2026, priority registration opens on July 20, regular registration closes on August 14, classes begin on August 17, and the standard add/drop period ends at 17:00 on August 28. The census date is September 4."
         }
       ],
       "attack_type": null
@@ -241,7 +241,7 @@
       "id": "H04",
       "difficulty": "hard",
       "question": "Does an unresolved financial hold prevent a student from completing academic requirements or participating in commencement?",
-      "expected_answer": "A financial hold does not erase completed academic requirements and does not block ceremonial commencement participation if allowed, but it blocks official degree conferral, final transcript release, and graduation clearance.",
+      "expected_answer": "An unresolved financial hold does not erase completed academic requirements, but it blocks new registration, official degree conferral, graduation clearance, and release of final transcripts. The corpus documents do not contain explicit evidence stating whether a financial hold prevents participation in the ceremonial commencement ceremony, so students must verify commencement eligibility directly with the Registrar or Student Accounts.",
       "contexts": [
         {
           "source_doc": "07_graduation_and_internship.md",
@@ -250,6 +250,10 @@
         {
           "source_doc": "03_tuition_payment_refund.md",
           "text": "The hold blocks new registration, official transcripts, and graduation clearance. It does not remove a student from courses that were already confirmed."
+        },
+        {
+          "source_doc": "07_graduation_and_internship.md",
+          "text": "Participation in a commencement ceremony is ceremonial and is not proof that a degree has been conferred."
         }
       ],
       "attack_type": null
@@ -301,8 +305,16 @@
       "id": "A03",
       "difficulty": "adversarial",
       "question": "How do I claim the 100% tuition refund reward for achieving perfect 100% course attendance?",
-      "expected_answer": "Northstar University does not offer a 100% tuition refund reward for perfect attendance. Attendance expectations require at least 80% participation, but tuition refunds are governed strictly by drop and withdrawal dates under the tuition refund policy.",
+      "expected_answer": "The provided policy corpus does not document a 100% tuition-refund reward for perfect attendance. It only documents an 80% attendance expectation and tuition refunds based on drop/withdrawal dates.",
       "contexts": [
+        {
+          "source_doc": "05_attendance_and_grading.md",
+          "text": "Students are expected to attend at least 80% of scheduled sessions in courses that record attendance."
+        },
+        {
+          "source_doc": "03_tuition_payment_refund.md",
+          "text": "For a course dropped by the end of standard add/drop, 100% of that course's tuition is reversed. From the day after standard add/drop through the census date, 50% is reversed. After census, no tuition is reversed for an ordinary course withdrawal."
+        },
         {
           "source_doc": "00_system_scope.md",
           "text": "The assistant must not invent a policy when the documents do not contain an answer. If information is missing or two current documents appear inconsistent, it should say what is known, identify the uncertainty, and direct the student to the responsible office."

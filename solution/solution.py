@@ -25,6 +25,7 @@ The reranking helper is an optional bonus exercise and may remain unimplemented.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -364,12 +365,24 @@ def rerank_by_overlap(contexts: list[str], query: str) -> list[str]:
 
     Reordering relevant chunks toward the top increases the rank-aware
     Context Precision WITHOUT changing the retrieved set.
-
-    Hint: sorted(contexts, key=lambda c: len(_tokenize(c) & _tokenize(query)),
-                 reverse=True)
     """
-    # TODO (Bonus — Exercise 3.5): implement the reranker
-    raise NotImplementedError("Implement rerank_by_overlap")
+    if not contexts:
+        return []
+    if not query:
+        return list(contexts)
+
+    query_tokens = _tokenize(query)
+
+    def _get_overlap(chunk: str | dict) -> int:
+        if isinstance(chunk, dict):
+            text = chunk.get("text", "")
+        else:
+            text = str(chunk) if chunk is not None else ""
+        chunk_tokens = _tokenize(text)
+        return len(chunk_tokens & query_tokens)
+
+    return sorted(contexts, key=_get_overlap, reverse=True)
+
 
 
 # ---------------------------------------------------------------------------
@@ -409,21 +422,18 @@ class LLMJudge:
             question: The original question.
             answer:   The AI's answer to score.
             rubric:   Dict mapping criterion name → description.
-                      Example: {"accuracy": "Is the answer factually correct?",
-                                "clarity": "Is the answer clear and well-structured?"}
 
         Behavior:
-            1. Build a judge prompt that includes the question, answer, and rubric.
-            2. Call judge_llm_fn(prompt).
-            3. Parse the response for scores.
-
-        For simplicity, if the LLM response can't be parsed as JSON scores,
-        return a default score of 0.5 for each criterion.
+            1. Build a judge prompt that includes question, answer, and rubric.
+            2. Call judge_llm_fn(prompt) handling API failures explicitly.
+            3. Parse JSON response, explicitly handling malformed JSON,
+               missing fields, and clamping out-of-range scores.
 
         Returns:
             {
-                "scores":    dict[str, float],  # criterion → score 0-1
-                "reasoning": str,               # raw LLM explanation
+                "scores": dict[str, float],
+                "reasoning": str,
+                "error_type": str | None,
             }
         """
         rubric_str = "\n".join(f"- {k}: {v}" for k, v in rubric.items())
@@ -434,25 +444,76 @@ class LLMJudge:
             f"Rubric:\n{rubric_str}\n"
             f"Respond in JSON format with scores 0-1 for each criterion and reasoning."
         )
-        response_text = self.judge_llm_fn(prompt)
+
+        try:
+            response_text = self.judge_llm_fn(prompt)
+        except Exception as exc:
+            return {
+                "scores": {criterion: 0.0 for criterion in rubric},
+                "reasoning": f"API failure: {str(exc)}",
+                "error_type": "api_failure",
+            }
+
         try:
             parsed = json.loads(response_text)
-            if isinstance(parsed, dict) and "scores" in parsed:
-                scores = {k: float(v) for k, v in parsed["scores"].items()}
-                reasoning = str(parsed.get("reasoning", response_text))
-                return {"scores": scores, "reasoning": reasoning}
-            elif isinstance(parsed, dict):
-                scores = {k: float(v) for k, v in parsed.items() if k in rubric}
-                for k in rubric:
-                    if k not in scores:
-                        scores[k] = 0.5
-                return {"scores": scores, "reasoning": response_text}
-        except Exception:
-            pass
+        except (json.JSONDecodeError, TypeError) as exc:
+            return {
+                "scores": {criterion: 0.0 for criterion in rubric},
+                "reasoning": f"Malformed JSON response: {exc}. Raw response: {response_text}",
+                "error_type": "malformed_json",
+            }
+
+        if not isinstance(parsed, dict):
+            return {
+                "scores": {criterion: 0.0 for criterion in rubric},
+                "reasoning": f"Malformed JSON response: expected object, got {type(parsed).__name__}. Raw response: {response_text}",
+                "error_type": "malformed_json",
+            }
+
+        reasoning = str(parsed.get("reasoning", response_text))
+
+        raw_scores_dict: dict[str, Any] = {}
+        if "scores" in parsed and isinstance(parsed["scores"], dict):
+            raw_scores_dict = parsed["scores"]
+        else:
+            raw_scores_dict = {k: v for k, v in parsed.items() if k in rubric}
+
+        missing_criteria = [c for c in rubric if c not in raw_scores_dict]
+        out_of_range = False
+        final_scores: dict[str, float] = {}
+
+        for c in rubric:
+            if c in raw_scores_dict:
+                try:
+                    val = float(raw_scores_dict[c])
+                    if val < 0.0 or val > 1.0:
+                        out_of_range = True
+                    clamped_val = max(0.0, min(1.0, val))
+                    final_scores[c] = clamped_val
+                except (ValueError, TypeError):
+                    missing_criteria.append(c)
+                    final_scores[c] = 0.0
+            else:
+                final_scores[c] = 0.0
+
+        if missing_criteria:
+            return {
+                "scores": final_scores,
+                "reasoning": f"Missing criteria fields: {missing_criteria}. Reasoning: {reasoning}",
+                "error_type": "missing_fields",
+            }
+
+        if out_of_range:
+            return {
+                "scores": final_scores,
+                "reasoning": f"Scores clamped to [0.0, 1.0]. Reasoning: {reasoning}",
+                "error_type": "score_out_of_range",
+            }
 
         return {
-            "scores": {criterion: 0.5 for criterion in rubric},
-            "reasoning": response_text,
+            "scores": final_scores,
+            "reasoning": reasoning,
+            "error_type": None,
         }
 
     def detect_bias(self, scores_batch: list[dict[str, Any]]) -> dict[str, Any]:
@@ -563,21 +624,10 @@ class BenchmarkRunner:
         """
         Generate an aggregate report from evaluation results.
 
-        Returns:
-            {
-                "total":            int,
-                "passed":           int,
-                "pass_rate":        float,  # passed / total
-                "avg_faithfulness": float,
-                "avg_relevance":    float,
-                "avg_completeness": float,
-                "avg_context_recall": float | None,
-                "avg_context_precision": float | None,
-                "failure_types":    dict[str, int],  # type → count
-            }
-
-        Average only non-None retrieval scores. Return None for a retrieval
-        average when no result contains that metric.
+        Filtering:
+            Only valid evaluations (error_type is None) are averaged into
+            aggregate score metrics to prevent API errors or malformed JSON
+            from distorting benchmark averages.
         """
         total = len(results)
         if total == 0:
@@ -593,12 +643,15 @@ class BenchmarkRunner:
                 "failure_types": {},
             }
 
+        valid_results = [r for r in results if getattr(r, "error_type", None) is None]
+        eval_count = len(valid_results) if valid_results else total
+
         passed_count = sum(1 for r in results if r.passed)
         pass_rate = passed_count / total
 
-        avg_faithfulness = sum(r.faithfulness for r in results) / total
-        avg_relevance = sum(r.relevance for r in results) / total
-        avg_completeness = sum(r.completeness for r in results) / total
+        avg_faithfulness = sum(r.faithfulness for r in valid_results) / eval_count
+        avg_relevance = sum(r.relevance for r in valid_results) / eval_count
+        avg_completeness = sum(r.completeness for r in valid_results) / eval_count
 
         recalls = [r.context_recall for r in results if r.context_recall is not None]
         precisions = [r.context_precision for r in results if r.context_precision is not None]

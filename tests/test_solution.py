@@ -360,6 +360,41 @@ class TestLLMJudge(unittest.TestCase):
         result = self.judge.score_response("Q", "A", {"accuracy": "desc"})
         self.assertIn("reasoning", result)
 
+    def test_score_response_valid_json(self):
+        judge = LLMJudge(lambda p: '{"scores": {"accuracy": 0.9, "clarity": 0.8}, "reasoning": "Good response"}')
+        res = judge.score_response("Q", "A", {"accuracy": "desc", "clarity": "desc"})
+        self.assertEqual(res["scores"]["accuracy"], 0.9)
+        self.assertEqual(res["scores"]["clarity"], 0.8)
+        self.assertEqual(res["reasoning"], "Good response")
+        self.assertIsNone(res.get("error_type"))
+
+    def test_score_response_malformed_json(self):
+        judge = LLMJudge(lambda p: 'This is not valid JSON')
+        res = judge.score_response("Q", "A", {"accuracy": "desc"})
+        self.assertEqual(res["error_type"], "malformed_json")
+        self.assertNotEqual(res["scores"]["accuracy"], 0.5)
+
+    def test_score_response_missing_fields(self):
+        judge = LLMJudge(lambda p: '{"scores": {}, "reasoning": "Missing keys"}')
+        res = judge.score_response("Q", "A", {"accuracy": "desc"})
+        self.assertEqual(res["error_type"], "missing_fields")
+        self.assertIn("accuracy", res["scores"])
+
+    def test_score_response_clamps_out_of_range(self):
+        judge = LLMJudge(lambda p: '{"scores": {"accuracy": 1.5, "clarity": -0.2}, "reasoning": "Out of range"}')
+        res = judge.score_response("Q", "A", {"accuracy": "desc", "clarity": "desc"})
+        self.assertEqual(res["scores"]["accuracy"], 1.0)
+        self.assertEqual(res["scores"]["clarity"], 0.0)
+        self.assertEqual(res["error_type"], "score_out_of_range")
+
+    def test_score_response_api_failure(self):
+        def _failing_fn(prompt):
+            raise ConnectionError("API connection timeout")
+        judge = LLMJudge(_failing_fn)
+        res = judge.score_response("Q", "A", {"accuracy": "desc"})
+        self.assertEqual(res["error_type"], "api_failure")
+        self.assertIn("API failure", res["reasoning"])
+
     def test_detect_bias_returns_dict_with_bias_types(self):
         scores_batch = [{"scores": {"accuracy": 0.9}, "reasoning": "good"}]
         result = self.judge.detect_bias(scores_batch)
@@ -378,8 +413,8 @@ class TestEvalResultOverallScore(unittest.TestCase):
         )
 
     def test_correct_average(self):
-        result = self._make_result(0.9, 0.8, 0.7)
-        self.assertAlmostEqual(result.overall_score(), (0.9 + 0.8 + 0.7) / 3, places=5)
+        result = self._make_result(0.6, 0.8, 1.0)
+        self.assertAlmostEqual(result.overall_score(), 0.8, places=5)
 
     def test_all_ones_returns_one(self):
         result = self._make_result(1.0, 1.0, 1.0)

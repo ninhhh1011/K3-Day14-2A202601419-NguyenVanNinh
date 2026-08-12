@@ -5,3 +5,20 @@ __pycache__/
 .venv/
 .env
 .DS_Store
+
+# Lab deliverables exclusion & design reference
+disanviet.pages.dev-DESIGN.md
+
+# Artifacts - track actual_answers.json & benchmark_results.json
+artifacts/*
+!artifacts/actual_answers.json
+!artifacts/benchmark_results.json
+
+# Helper scripts
+calculate_reranking.py
+format_table.py
+secret_scanner.py
+verify_retrieved_provenance.py
+check_alignment.py
+run_rc_verification.py
+run_alignment_assertions.py
